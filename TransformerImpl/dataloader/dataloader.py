@@ -102,11 +102,13 @@ class TokenizeDataset(Dataset):
             result[i, id] = 1
         return result
 
-    def truncate_pad(self, vocab, sent_tensor, num_steps):
+    def truncate_pad(self, vocab, sent_tensor, num_steps, is_target):
         init_vector, end_vector, pad_vector = (self.id2vector(len(vocab), vocab.token2id[self.init_token]).unsqueeze(0),
                                                self.id2vector(len(vocab), vocab.token2id[self.end_token]).unsqueeze(0),
                                                self.id2vector(len(vocab), vocab.token2id[self.pad_token]).unsqueeze(0))
         # TODO 是否需要添加bos标记
+        if is_target:
+            sent_tensor = torch.cat((init_vector, sent_tensor), dim=0)
         sent_tensor = torch.cat((sent_tensor, end_vector), dim=0)
         pad_len = 0
         while sent_tensor.shape[0] < num_steps:
@@ -114,7 +116,7 @@ class TokenizeDataset(Dataset):
             pad_len += 1
         return sent_tensor[:num_steps], num_steps - pad_len
 
-    def sentences2tensor(self, sentences, num_steps, vocab):
+    def sentences2tensor(self, sentences, num_steps, vocab, is_target):
         def sentence2tensor(word_list):
             return self.array2onehot(
                 vocab.doc2idx(word_list), len(vocab)
@@ -123,19 +125,41 @@ class TokenizeDataset(Dataset):
         tensors = [sentence2tensor(sent) for sent in sentences]
         """将小批量语句转化为向量 ,返回值为三维张量和对应一维有效长度"""
         t = [
-            self.truncate_pad(vocab, sent_tensor, num_steps) for sent_tensor in tensors
+            self.truncate_pad(vocab, sent_tensor, num_steps, is_target) for sent_tensor in tensors
         ]
 
         return torch.stack(
             [h[0] for h in t], dim=0
-        ), torch.tensor([h[1] for h in t])
+        ).to(dtype=torch.int), torch.tensor([h[1] for h in t]).to(dtype=torch.int)
+
+    def sentence2vector(self, sentences, vocab, num_steps, add_bos=False):
+        init_toke_id, end_toke_id, pad_token_id = vocab.token2id['<bos>'], vocab.token2id['<eos>'], vocab.token2id[
+            '<pad>']
+
+        def sent2vector(word_list):
+            result = [vocab.token2id[word] for word in word_list]
+            if add_bos:
+                result = [init_toke_id] + result
+            result = result + [end_toke_id]
+            padding_count = 0
+            while len(result) < num_steps:
+                result.append(pad_token_id)
+                padding_count += 1
+            return torch.tensor(result[:num_steps]).unsqueeze(0).to(dtype=torch.int), num_steps - padding_count
+
+        res = [sent2vector(sent) for sent in sentences]
+        vectors = [a[0] for a in res]
+        valid_lens = [a[1] for a in res]
+        return (torch.concat(list(vectors), dim=0),
+                torch.tensor(list(valid_lens)).to(dtype=torch.int))
 
     def make_iter(self, num_steps, batch_size, is_train=True):
-        source_data, source_valid_lens = self.sentences2tensor(self.source_tokens, num_steps, self.source_vocab)
-        target_data, target_valid_lens = self.sentences2tensor(self.target_tokens, num_steps, self.target_vocab)
+        #source_data, source_valid_lens = self.sentences2tensor(self.source_tokens, num_steps, self.source_vocab,False)
+        #target_data, target_valid_lens = self.sentences2tensor(self.target_tokens, num_steps, self.target_vocab,True)
+        source_data, source_valid_lens = self.sentence2vector(self.source_tokens, self.source_vocab, num_steps, False)
+        target_data, target_valid_lens = self.sentence2vector(self.target_tokens, self.target_vocab, num_steps, True)
         dataset = TensorDataset(source_data, source_valid_lens, target_data, target_valid_lens)
         return DataLoader(dataset, batch_size=batch_size, shuffle=is_train)
-
 
 # if __name__ == '__main__':
 #     train_set = load_data_file('data/datasets/Multi30k/test.en', 'data/datasets/Multi30k/train.de')

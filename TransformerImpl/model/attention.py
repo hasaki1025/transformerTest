@@ -6,14 +6,14 @@ from torch import nn
 
 class DotProductAttention(nn.Module):
 
-    def __init__(self, dropout, **kwargs) -> None:
-        super(DotProductAttention, self).__init__(**kwargs)
+    def __init__(self, dropout) -> None:
+        super(DotProductAttention, self).__init__()
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, query, key, value, mask=None):
         scores = torch.bmm(query, key.transpose(1, 2)) / math.sqrt(query.shape[2])
         if mask is not None:
-            scores = scores.masked_fill(mask == 0, -1e9)
+            scores = scores.masked_fill(mask, -1e9)
         return torch.bmm(
             torch.softmax(
                 scores, dim=-1
@@ -22,8 +22,8 @@ class DotProductAttention(nn.Module):
 
 
 class MultiHeadAttention(nn.Module):
-    def __init__(self, num_heads, dropout, query_size, key_size, value_size, num_hiddens, **kwargs) -> None:
-        super(MultiHeadAttention, self).__init__(**kwargs)
+    def __init__(self, num_heads, dropout, query_size, key_size, value_size, num_hiddens) -> None:
+        super(MultiHeadAttention, self).__init__()
         self.num_heads = num_heads
         self.dropout = nn.Dropout(dropout)
         self.W_q = nn.Linear(query_size, num_hiddens)
