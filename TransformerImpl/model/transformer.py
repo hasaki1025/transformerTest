@@ -118,7 +118,7 @@ class Decoder(nn.Module):
     def forward(self, x, encoder_outputs, valid_lens=None):
         x = self.embedding(x)
         x = self.PositionEncoder(x)
-        dec_mask = make_target_mask(encoder_outputs, valid_lens)
+        dec_mask = make_target_mask(x, valid_lens)
         for blk in self.decoder_list:
             x = blk(x, encoder_outputs, dec_mask)
         return x
@@ -131,7 +131,7 @@ class Transformer(nn.Module):
         self.encoder = Encoder(encoder_layers, d_model, num_heads, dropout, device, source_vocab_size)
         self.decoder = Decoder(decoder_layers, d_model, num_heads, dropout, device, target_vocab_size)
         self.linear = nn.LazyLinear(out_features=target_vocab_size, bias=True, device=device)
-        self.softmax = nn.LogSoftmax(dim=-1)
+        self.softmax = nn.Softmax(dim=-1)
 
     def forward(self, x, y, src_valid_lens=None, tar_valid_lens=None):
         if self.training:

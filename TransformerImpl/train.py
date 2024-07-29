@@ -1,12 +1,20 @@
 import torch
-from torch import nn
+from torch import nn, Tensor
 
 import model
 from TransformerImpl.dataloader.dataloader import load_data_file, TokenizeDataset
 from TransformerImpl.model.transformer import Transformer
 
 
+class MaskedSoftmaxCELoss(nn.CrossEntropyLoss):
+    def make_output_mask(self, input_shape, valid_lens):
+        m = torch.arange(input_shape[1]).unsqueeze(0).unsqueeze(2)
+        valid_lens = valid_lens.unsqueeze(1).unsqueeze(2)
+        return (m < valid_lens).repeat((1, 1, input_shape[2]))
 
+    def forward(self, input: Tensor, target: Tensor, valid_lens: Tensor) -> Tensor:
+        mask = self.make_output_mask(input.shape, valid_lens).reshape(-1, input.shape[2])
+        return mask * super(MaskedSoftmaxCELoss, self).forward(input.reshape(-1, input.shape[2]), target.reshape(-1).to(dtype=torch.long))
 
 
 def train():
@@ -31,8 +39,9 @@ def train():
     source_vocab_size = len(tokenizeDataset.source_vocab)
     target_vocab_size = len(tokenizeDataset.target_vocab)
 
-    loss = nn.CrossEntropyLoss()
-    net = Transformer(num_heads, dropout, device, num_layers, num_hiddens, num_layers, source_vocab_size,target_vocab_size)
+    loss = MaskedSoftmaxCELoss().to(device=device)
+    net = Transformer(num_heads, dropout, device, num_layers, num_hiddens, num_layers, source_vocab_size,
+                      target_vocab_size).to(device=device)
     optimizer = torch.optim.Adam(net.parameters(), lr)
 
     for i in range(num_epochs):
@@ -42,12 +51,15 @@ def train():
             x, y = x.to(device), y.to(device)
             optimizer.zero_grad()
             y_hat = net(x, y, x_valid_lens, y_valid_lens)
-            l = loss(y_hat, y)
-            epoch_loss += l
-            l.backward()
+            l = loss(y_hat, y, y_valid_lens)
+            ls = l.sum()
+            epoch_loss += ls
+            ls.backward()
             optimizer.step()
 
         print(f'epoch {i} loss: {epoch_loss} \n')
 
 
 train()
+
+

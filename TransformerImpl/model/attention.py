@@ -42,11 +42,14 @@ class MultiHeadAttention(nn.Module):
 
     def unsplit(self, x):
         shape = x.shape
-        x = x.reshape(-1, self.num_heads, shape[2], shape[3])
+        x = x.reshape(-1, self.num_heads, shape[1], shape[2])
         x = x.permute(0, 2, 1, 3)
         return x.reshape(x.shape[0], x.shape[1], -1)
 
     def forward(self, query, key, value, mask=None):
         query, key, value = self.W_q(query), self.W_k(key), self.W_v(value)
-        out = self.attention(self.split(query), self.split(key), self.split(value), self.split(mask))
+        if mask is not None:
+            mask = mask.repeat_interleave(self.num_heads, dim=0)
+
+        out = self.attention(self.split(query), self.split(key), self.split(value), mask)
         return self.W_out(self.unsplit(out))
